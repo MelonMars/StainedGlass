@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Stained-Glass Img2Img (single-file)</title>
+<style>
+  :root{--bg:#0f1720;--card:#0b1220;--accent:#f59e0b;--muted:#93a3b3;color-scheme:dark}
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#071029 0%, #0b1220 100%);font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial}
+  .wrap{max-width:920px;margin:28px auto;padding:20px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:12px;box-shadow:0 6px 30px rgba(2,6,23,0.7)}
+  h1{margin:0 0 6px;color:#fff;font-size:20px}
+  p.lead{margin:0 0 18px;color:var(--muted);font-size:13px}
+  .grid{display:grid;grid-template-columns:260px 1fr;gap:16px}
+  .panel{background:rgba(255,255,255,0.02);padding:14px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+  input[type="file"]{width:100%}
+  select,input[type="text"]{width:100%;padding:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:#fff}
+  button{background:var(--accent);border:none;padding:10px 14px;border-radius:8px;color:#061018;font-weight:600;cursor:pointer}
+  .preview, .result{display:flex;flex-direction:column;gap:8px;align-items:center}
+  img.preview-img, img.result-img{max-width:100%;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:#071122}
+  .small{font-size:12px;color:var(--muted)}
+  .spinner{width:44px;height:44px;border-radius:50%;border:4px solid rgba(255,255,255,0.06);border-top-color:var(--accent);animation:spin 1s linear infinite;margin:12px 0}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  footer{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}
+  .hint{margin-top:8px;color:var(--muted);font-size:12px}
+  .api-key{font-family:monospace}
+  .row{display:flex;gap:8px}
+  .flex-1{flex:1}
+  .styles-list{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+  .styles-list button{background:transparent;border:1px dashed rgba(255,255,255,0.04);color:var(--muted);padding:8px;border-radius:6px;text-align:left}
+</style>
+</head>
+<body>
+<div class="wrap" role="main">
+  <h1>Stained-Glass Img2Img — single file demo</h1>
+  <p class="lead">Upload an image, pick a stained-glass style, and send it to a free image-edit API (requires a DeepAI API key). Try small images (<=1024px) first.</p>
+
+  <div class="grid">
+    <div class="panel">
+      <label>DeepAI API Key (paste here)</label>
+    <input id="apiKey" class="api-key" type="password" placeholder="sk-XXXX... (get from https://deepai.org)" spellcheck="false" />
+
+      <label style="margin-top:12px">Upload source image</label>
+      <input id="fileInput" type="file" accept="image/*" />
+
+      <label style="margin-top:12px">Choose stained-glass type</label>
+      <select id="styleSelect">
+        <option value="medieval">Medieval cathedral (lead outlines, jewel tones)</option>
+        <option value="mosaic">Mosaic-style (many small panes)</option>
+        <option value="art-nouveau">Art Nouveau stained glass (flowing lines, plants)</option>
+        <option value="geometric">Modern geometric stained-glass (flat shapes, bold colors)</option>
+        <option value="vitrail-french">Classic French vitrail (rich reds & blues)</option>
+      </select>
+
+      <label style="margin-top:12px">Optional extra prompt</label>
+      <input id="extraPrompt" type="text" placeholder="e.g. 'sunlight through glass, heavy black outlines'" />
+
+      <div style="margin-top:12px" class="row">
+        <button id="convertBtn" class="flex-1">Convert to stained glass</button>
+        <button id="clearBtn" style="background:#203040;color:#fff">Clear</button>
+      </div>
+
+      <div class="hint">
+        Tip: The app sends your image + a prompt directing the editor to produce a stained-glass effect. Results vary by input. This demo uses DeepAI's public editing API (you must supply your API key).
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="preview">
+        <label>Source preview</label>
+        <div id="srcWrap" style="width:100%;display:flex;justify-content:center;align-items:center;min-height:180px;flex-direction:column">
+          <div class="small">No image chosen</div>
+        </div>
+      </div>
+
+      <div style="height:12px"></div>
+
+      <div class="result">
+        <label>Result</label>
+        <div id="resultWrap" style="width:100%;display:flex;justify-content:center;align-items:center;min-height:180px;flex-direction:column">
+          <div class="small">No result yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(async()=>{
+
+  const fileInput = document.getElementById('fileInput');
+  const srcWrap = document.getElementById('srcWrap');
+  const resultWrap = document.getElementById('resultWrap');
+  const convertBtn = document.getElementById('convertBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const apiKeyInput = document.getElementById('apiKey');
+  const styleSelect = document.getElementById('styleSelect');
+  const extraPrompt = document.getElementById('extraPrompt');
+
+  let currentFile = null;
+
+  fileInput.addEventListener('change', e=>{
+    const f = e.target.files && e.target.files[0];
+    currentFile = f || null;
+    renderSource();
+  });
+
+  clearBtn.addEventListener('click', ()=>{
+    fileInput.value = '';
+    currentFile = null;
+    srcWrap.innerHTML = '<div class="small">No image chosen</div>';
+    resultWrap.innerHTML = '<div class="small">No result yet</div>';
+  });
+
+  function renderSource(){
+    if(!currentFile){ srcWrap.innerHTML = '<div class="small">No image chosen</div>'; return; }
+    const url = URL.createObjectURL(currentFile);
+    srcWrap.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = url;
+    img.className = 'preview-img';
+    img.style.maxHeight = '320px';
+    srcWrap.appendChild(img);
+  }
+
+  function setLoading(isLoading){
+    convertBtn.disabled = isLoading;
+    convertBtn.textContent = isLoading ? 'Processing…' : 'Convert to stained glass';
+    if(isLoading){
+      resultWrap.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center"><div class="spinner"></div><div class="small">waiting for API...</div></div>';
+    }
+  }
+
+  function buildPrompt(styleKey, extra){
+    // template prompts per style. tweak these to taste.
+    const stylePrompts = {
+      'medieval': 'Render the photo as a medieval stained-glass window. Emphasize strong black/lead outlines, jewel-tone colors (deep ruby, cobalt, emerald), luminous glass texture, simplified shapes, dramatic light shining through.',
+      'mosaic': 'Transform the image into a mosaic-like stained-glass composed of many small irregular panes, each with slightly different hues and reflective glass texture. Visible lead grid and grout.',
+      'art-nouveau': 'Convert the picture into an art-nouveau stained-glass panel: flowing organic lines, floral motifs, iridescent glass, soft pastels and golden accents.',
+      'geometric': 'Stylize the image into a modern geometric stained-glass: flat bold shapes, high contrast colors, clear lead separations, simplified abstract composition.',
+      'vitrail-french': 'Make a classic French vitrail stained-glass: rich reds and blues, intricate leadwork, ornate patterns, textured glass shimmering under sunlight.'
+    };
+    const core = stylePrompts[styleKey] || stylePrompts['medieval'];
+    return extra ? (core + ' ' + extra) : core;
+  }
+
+  async function sendToDeepAI(apiKey, file, promptText){
+    const url = 'https://api.deepai.org/api/image-editor';
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('text', promptText);
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey.trim()
+      },
+      body: fd
+    });
+    if(!res.ok){
+      const text = await res.text().catch(()=>null);
+      throw new Error('API error: ' + res.status + ' ' + res.statusText + (text?(' — '+text):''));
+    }
+    const data = await res.json();
+    return data;
+  }
+
+  convertBtn.addEventListener('click', async ()=>{
+    const key = apiKeyInput.value.trim();
+    if(!key){
+      alert('Please paste your DeepAI API key in the top-left field.');
+      return;
+    }
+    if(!currentFile){
+      alert('Please choose an image file first.');
+      return;
+    }
+
+    setLoading(true);
+    resultWrap.innerHTML = '';
+
+    try{
+      const promptText = buildPrompt(styleSelect.value, extraPrompt.value.trim());
+      const resp = await sendToDeepAI(key, currentFile, promptText);
+      const out = resp.output_url || resp.output || (resp.id && ('https://api.deepai.org/job-view-file/'+resp.id+'/outputs/output.jpg'));
+      if(!out){
+        console.warn('Full response', resp);
+        throw new Error('No output_url in API response. See console for full response.');
+      }
+      resultWrap.innerHTML = '';
+      const a = document.createElement('a');
+      a.href = out;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      const im = document.createElement('img');
+      im.className = 'result-img';
+      im.src = out;
+      im.style.maxHeight = '520px';
+      a.appendChild(im);
+      resultWrap.appendChild(a);
+
+      const info = document.createElement('div');
+      info.className = 'small';
+      info.style.marginTop = '8px';
+      info.innerHTML = `<div>Result from API — <a href="${out}" target="_blank" style="color:var(--accent)">open</a></div>`;
+      resultWrap.appendChild(info);
+
+    }catch(err){
+      console.error(err);
+      resultWrap.innerHTML = '<div class="small" style="color:#ffb4b4">Error: '+(err.message||err)+'</div>';
+    }finally{
+      setLoading(false);
+    }
+  });
+
+  // initial small UX nicety: drag & drop into the preview area
+  srcWrap.addEventListener('dragover', e=>{ e.preventDefault(); srcWrap.style.outline='2px dashed rgba(255,255,255,0.04)'; });
+  srcWrap.addEventListener('dragleave', e=>{ srcWrap.style.outline='none'; });
+  srcWrap.addEventListener('drop', e=>{
+    e.preventDefault();
+    srcWrap.style.outline='none';
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f){ fileInput.files = e.dataTransfer.files; currentFile = f; renderSource(); }
+  });
+
+})();
+</script>
+</body>
+</html>
